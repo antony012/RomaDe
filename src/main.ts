@@ -1,23 +1,13 @@
-import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { setupApp } from './setup-app';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-
-  app.enableCors();
-
+  setupApp(app);
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
-  console.log(`Memberships API listening on http://localhost:${port}`);
+  console.log(`RomaDe API listening on http://localhost:${port}`);
 }
 
-bootstrap();
+void bootstrap();
