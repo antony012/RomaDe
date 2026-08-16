@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, LessThanOrEqual, MoreThan, Not, Repository } from 'typeorm';
+import { IntegrityService } from '../integrity/integrity.service';
 import { CancelMembershipDto } from '../memberships/dto/cancel-membership.dto';
 import { CreateMembershipDto } from '../memberships/dto/create-membership.dto';
 import { UpdateMembershipDto } from '../memberships/dto/update-membership.dto';
@@ -23,6 +24,7 @@ export class AdminDashboardService {
     private readonly usersService: UsersService,
     private readonly membershipsService: MembershipsService,
     private readonly adminsService: AdminsService,
+    private readonly integrityService: IntegrityService,
   ) {}
 
   private async sumRevenueSince(from?: Date): Promise<number> {
@@ -179,6 +181,14 @@ export class AdminDashboardService {
 
   listAdmins() {
     return this.adminsService.findAll();
+  }
+
+  listVerifications() {
+    return this.integrityService.listVerifications();
+  }
+
+  listDashEvents() {
+    return this.integrityService.listDashEvents();
   }
 
   getAdmin(id: string) {

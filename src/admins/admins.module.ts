@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { IntegrityModule } from '../integrity/integrity.module';
 import { Membership } from '../memberships/entities/membership.entity';
 import { MembershipsModule } from '../memberships/memberships.module';
 import { User } from '../users/entities/user.entity';
@@ -21,6 +22,7 @@ import { JwtStrategy } from './guards/jwt.strategy';
     TypeOrmModule.forFeature([Admin, User, Membership]),
     UsersModule,
     MembershipsModule,
+    IntegrityModule,
     PassportModule.register({ defaultStrategy: 'admin-jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

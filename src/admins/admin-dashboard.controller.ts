@@ -105,6 +105,16 @@ export class AdminDashboardController {
     });
   }
 
+  @Get('verifications')
+  listVerifications() {
+    return this.dashboardService.listVerifications();
+  }
+
+  @Get('dash-events')
+  listDashEvents() {
+    return this.dashboardService.listDashEvents();
+  }
+
   @Get('admins')
   listAdmins() {
     return this.dashboardService.listAdmins();

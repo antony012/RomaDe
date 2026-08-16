@@ -1,6 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { Admin } from '../admins/entities/admin.entity';
+import { DashEvent } from '../integrity/entities/dash-event.entity';
+import { IntegritySession } from '../integrity/entities/integrity-session.entity';
+import { RemoteVerifyRequest } from '../integrity/entities/remote-verify-request.entity';
 import { Membership } from '../memberships/entities/membership.entity';
 import { User } from '../users/entities/user.entity';
 
@@ -15,7 +18,14 @@ function projectRefFromSupabaseUrl(supabaseUrl: string): string | null {
 }
 
 export function typeormOptions(config: ConfigService): TypeOrmModuleOptions {
-  const entities = [User, Membership, Admin];
+  const entities = [
+    User,
+    Membership,
+    Admin,
+    IntegritySession,
+    RemoteVerifyRequest,
+    DashEvent,
+  ];
   const logging = config.get<string>('DB_LOGGING') === 'true';
   const ssl = { rejectUnauthorized: false };
 
