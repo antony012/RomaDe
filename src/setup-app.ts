@@ -8,6 +8,10 @@ export function setupApp(app: INestApplication): INestApplication {
       transform: true,
     }),
   );
-  app.enableCors();
+  app.enableCors({
+    origin: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
   return app;
 }
