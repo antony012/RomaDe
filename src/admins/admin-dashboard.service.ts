@@ -134,12 +134,12 @@ export class AdminDashboardService {
 
   async getUser(id: string) {
     const user = await this.usersService.findOne(id);
-    return this.serializeUser(user, true);
+    return this.serializeUser(user);
   }
 
   async updateUser(id: string, dto: UpdateUserDto) {
     const user = await this.usersService.update(id, dto);
-    return this.serializeUser(user, true);
+    return this.serializeUser(user);
   }
 
   async listMemberships() {
@@ -197,7 +197,7 @@ export class AdminDashboardService {
     return this.adminsService.remove(id);
   }
 
-  private serializeUser(user: User, includeToken = false) {
+  private serializeUser(user: User) {
     const memberships = (user.memberships ?? []).map((membership) =>
       this.serializeMembership(membership, false),
     );
@@ -209,17 +209,6 @@ export class AdminDashboardService {
       lastName: user.lastName,
       phone: user.phone,
       notes: user.notes,
-      sub: user.sub,
-      iss: user.iss,
-      aud: user.aud,
-      iat: user.iat,
-      exp: user.exp,
-      jti: user.jti,
-      jwtPayload: user.jwtPayload,
-      jwtTokenPreview: user.jwtToken
-        ? `${user.jwtToken.slice(0, 24)}…${user.jwtToken.slice(-12)}`
-        : null,
-      jwtToken: includeToken ? user.jwtToken : undefined,
       memberships,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -253,7 +242,6 @@ export class AdminDashboardService {
               email: membership.user.email,
               firstName: membership.user.firstName,
               lastName: membership.user.lastName,
-              sub: membership.user.sub,
             }
           : undefined,
     };
