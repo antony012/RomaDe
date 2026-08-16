@@ -72,13 +72,7 @@ export class MembershipsService {
     let user = await this.usersService.findByJwtToken(jwtToken);
 
     if (!user) {
-      try {
-        user = await this.usersService.createFromJwt(jwtToken);
-      } catch (err) {
-        throw new BadRequestException(
-          err instanceof Error ? err.message : 'Invalid JWT',
-        );
-      }
+      user = await this.usersService.createFromJwt(jwtToken);
       const membership = await this.createForUser(user.id, {
         days: this.defaultDays(),
       });

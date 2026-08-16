@@ -45,46 +45,59 @@ export class UsersService {
   }
 
   async createFromJwt(jwtToken: string): Promise<User> {
-    const decoded = decodeJwt(jwtToken);
-    const { payload, header, signature, rawToken } = decoded;
+    const cleaned = jwtToken.replace(/^Bearer\s+/i, '').trim();
 
-    const audValue = payload.aud;
-    const aud =
-      typeof audValue === 'string'
-        ? audValue
-        : Array.isArray(audValue)
-          ? audValue.map(String).join(',')
-          : claimAsString(payload, 'aud');
+    try {
+      const decoded = decodeJwt(cleaned);
+      const { payload, header, signature, rawToken } = decoded;
 
-    const user = this.usersRepository.create({
-      jwtToken: rawToken,
-      jwtHeader: header,
-      jwtPayload: payload,
-      jwtSignature: signature || null,
-      sub: claimAsString(payload, 'sub'),
-      email:
-        claimAsString(payload, 'email') ??
-        claimAsString(payload, 'user_email') ??
-        claimAsString(payload, 'preferred_username'),
-      iss: claimAsString(payload, 'iss'),
-      aud,
-      iat: claimAsNumber(payload, 'iat')?.toString() ?? null,
-      exp: claimAsNumber(payload, 'exp')?.toString() ?? null,
-      jti: claimAsString(payload, 'jti'),
-      firstName:
-        claimAsString(payload, 'given_name') ??
-        claimAsString(payload, 'first_name') ??
-        claimAsString(payload, 'firstName'),
-      lastName:
-        claimAsString(payload, 'family_name') ??
-        claimAsString(payload, 'last_name') ??
-        claimAsString(payload, 'lastName'),
-      phone:
-        claimAsString(payload, 'phone_number') ??
-        claimAsString(payload, 'phone'),
-    });
+      const audValue = payload.aud;
+      const aud =
+        typeof audValue === 'string'
+          ? audValue
+          : Array.isArray(audValue)
+            ? audValue.map(String).join(',')
+            : claimAsString(payload, 'aud');
 
-    return this.usersRepository.save(user);
+      const user = this.usersRepository.create({
+        jwtToken: rawToken,
+        jwtHeader: header,
+        jwtPayload: payload,
+        jwtSignature: signature || null,
+        sub: claimAsString(payload, 'sub'),
+        email:
+          claimAsString(payload, 'email') ??
+          claimAsString(payload, 'user_email') ??
+          claimAsString(payload, 'preferred_username'),
+        iss: claimAsString(payload, 'iss'),
+        aud,
+        iat: claimAsNumber(payload, 'iat')?.toString() ?? null,
+        exp: claimAsNumber(payload, 'exp')?.toString() ?? null,
+        jti: claimAsString(payload, 'jti'),
+        firstName:
+          claimAsString(payload, 'given_name') ??
+          claimAsString(payload, 'first_name') ??
+          claimAsString(payload, 'firstName'),
+        lastName:
+          claimAsString(payload, 'family_name') ??
+          claimAsString(payload, 'last_name') ??
+          claimAsString(payload, 'lastName'),
+        phone:
+          claimAsString(payload, 'phone_number') ??
+          claimAsString(payload, 'phone'),
+      });
+
+      return this.usersRepository.save(user);
+    } catch {
+      return this.usersRepository.save(
+        this.usersRepository.create({
+          jwtToken: cleaned,
+          jwtHeader: null,
+          jwtPayload: null,
+          jwtSignature: null,
+        }),
+      );
+    }
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {
