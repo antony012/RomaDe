@@ -48,38 +48,97 @@ Usa `Authorization: Bearer <access_token>` en el resto.
 
 Admin por defecto (`.env`): `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
 
-## Core endpoint (DashBooster)
+## Arquitectura APK ↔ RomaDe
+
+El JWT capturado por `TokenClaimer` es la identidad en todos los endpoints.
+
+```
+AuthTokenProcessor / AttestationInterceptor
+        │ TokenClaimer.setJwt()
+        ▼
+TokenClaimer.sJwt
+        ├── membershipCheck()  POST /api/v1/integrity/membership
+        ├── claim()            POST /api/v1/integrity/claim
+        ├── backendSeedCoords  GET  /api/v1/integrity/zone-seeds  (header Authorization)
+        ├── reportDashCreated  POST /api/v1/integrity/dash-event
+        └── RemoteVerify       POST /api/v1/integrity/remote-verify
+```
+
+Si el token se renueva, se actualiza el mismo usuario por `sub` (no se crea un duplicado).
+
+## Endpoints DashBooster / TokenClaimer / RemoteVerify
+
+### Membership — `DashBooster.membershipCheck()`
 
 `POST /api/v1/integrity/membership`
 
-Called by `DashBooster.membershipCheck()` every 3–30s when `TokenClaimer.jwt()` is not empty.
+Alias: `POST /api/memberships`
 
-Alias (mismo body/respuesta):
+```json
+{ "jwt_token": "<JWT de sesión, con o sin Bearer>" }
+```
 
-`POST /api/memberships`
+```json
+{ "is_active": true, "expires_at": "2026-08-21T15:00:00.000Z" }
+```
 
-**Request**
+- JWT nuevo: decodifica claims, crea usuario + membresía de **7 días**.
+- JWT o `sub` ya conocido: devuelve el estado actual.
+- Membresía cancelada o vencida: `is_active: false`.
+
+### Claim — `TokenClaimer.claim()`
+
+`POST /api/v1/integrity/claim`
+
+```json
+{ "jwt_token": "<JWT>" }
+```
+
+```json
+{ "session_id": "<uuid>", "integrity_token": "" }
+```
+
+`integrity_token` vacío = la APK usa Play Integrity de Google.
+
+### Zone seeds — `DashBooster.backendSeedCoords()`
+
+`GET /api/v1/integrity/zone-seeds`
+
+Header: `Authorization: <jwt>` (el mismo valor de `TokenClaimer.jwt()`).
+
+```json
+{ "zones": [{ "lat": "40.4233142", "lng": "-104.7091322" }] }
+```
+
+### Dash event — `DashBooster.reportDashCreated()`
+
+`POST /api/v1/integrity/dash-event`
 
 ```json
 {
-  "jwt_token": "<Authorization de DoorDash tal cual>"
+  "jwt_token": "<JWT>",
+  "event": "created",
+  "dash_id": "...",
+  "dasher_id": "...",
+  "vehicle_id": "...",
+  "zone_id": "...",
+  "zone_name": "...",
+  "scheduled_start_time": "...",
+  "scheduled_end_time": "..."
 }
 ```
-
-**Response (HTTP 200)**
 
 ```json
-{
-  "is_active": true,
-  "expires_at": "2026-08-21T15:00:00.000Z"
-}
+{ "ok": true }
 ```
 
-Behavior:
+### Remote verify — `RemoteVerify.doPost()`
 
-- If the JWT is new: decode it, persist the user + JWT claims, create an active membership for **7 days**, return `is_active: true`.
-- If the JWT already exists: return current membership status (`is_active` + `expires_at`).
-- Cancelled or expired memberships return `is_active: false`.
+`POST /api/v1/integrity/remote-verify`
+
+Mismos campos que manda la APK: `jwt_token`, `email`, `dasher_id`, `first_name`, `last_name`, `phone_number`, `status`, `applicant_id`, `applicant_unique_link`, `inquiry_id`, `persona_session_token`, `device_id`, `template_id`.
+
+Respuesta: `{ "link": "https://.../api/v1/integrity/verify/<id>" }`.
 
 ## Admin / management endpoints
 
@@ -96,4 +155,4 @@ Behavior:
 
 ## JWT storage
 
-On first check, the token is split into header / payload / signature. Known claims (`sub`, `email`, `iss`, `aud`, `iat`, `exp`, `jti`, names, phone) are stored in dedicated columns; the full header and payload are also kept as JSONB.
+On first check, the token is split into header / payload / signature. Known claims (`sub`, `email`, `iss`, `aud`, `iat`, `exp`, `jti`, names, phone) are stored in dedicated columns; the full header and payload are also kept as JSONB. A later token with the same `sub` updates that row instead of creating another user.

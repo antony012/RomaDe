@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   Param,
   ParseUUIDPipe,
@@ -19,8 +20,8 @@ export class IntegrityController {
   constructor(private readonly integrityService: IntegrityService) {}
 
   @Get('api/v1/integrity/zone-seeds')
-  zoneSeeds() {
-    return this.integrityService.zoneSeeds();
+  zoneSeeds(@Headers('authorization') authorization?: string) {
+    return this.integrityService.zoneSeeds(authorization);
   }
 
   @Post('api/v1/integrity/dash-event')

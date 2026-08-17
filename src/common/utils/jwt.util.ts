@@ -7,6 +7,18 @@ export interface DecodedJwt {
   rawToken: string;
 }
 
+export function stripJwtBearer(
+  token: string | null | undefined,
+): string {
+  return (token ?? '').replace(/^Bearer\s+/i, '').trim();
+}
+
+export function jwtFromAuthorization(
+  header: string | null | undefined,
+): string {
+  return stripJwtBearer(header);
+}
+
 function base64UrlDecode(input: string): string {
   const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
   const pad = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
@@ -14,7 +26,7 @@ function base64UrlDecode(input: string): string {
 }
 
 export function decodeJwt(token: string): DecodedJwt {
-  const cleaned = token.replace(/^Bearer\s+/i, '').trim();
+  const cleaned = stripJwtBearer(token);
   const parts = cleaned.split('.');
 
   if (parts.length < 2) {

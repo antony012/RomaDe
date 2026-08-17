@@ -2,8 +2,13 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import {
+  jwtFromAuthorization,
+  stripJwtBearer,
+} from '../common/utils/jwt.util';
 import { MembershipsService } from '../memberships/memberships.service';
 import { UsersService } from '../users/users.service';
+import { User } from '../users/entities/user.entity';
 import { ClaimDto } from './dto/claim.dto';
 import { DashEventDto } from './dto/dash-event.dto';
 import { RemoteVerifyDto } from './dto/remote-verify.dto';
@@ -25,7 +30,12 @@ export class IntegrityService {
     private readonly configService: ConfigService,
   ) {}
 
-  zoneSeeds() {
+  async zoneSeeds(authorization?: string) {
+    const jwt = jwtFromAuthorization(authorization);
+    if (jwt) {
+      await this.resolveUser(jwt);
+    }
+
     return {
       zones: [
         { lat: '40.4233142', lng: '-104.7091322' },
@@ -36,13 +46,13 @@ export class IntegrityService {
   }
 
   async claim(dto: ClaimDto) {
-    const jwt = dto.jwt_token;
+    const jwt = stripJwtBearer(dto.jwt_token);
     if (!jwt) {
       return { session_id: '', integrity_token: '' };
     }
 
     await this.membershipsService.checkIntegrity(jwt);
-    const user = await this.usersService.findByJwtToken(jwt);
+    const user = await this.resolveUser(jwt);
     const session = await this.sessions.save(
       this.sessions.create({
         userId: user?.id ?? null,
@@ -58,13 +68,12 @@ export class IntegrityService {
   }
 
   async remoteVerify(dto: RemoteVerifyDto) {
-    const user = dto.jwt_token
-      ? await this.usersService.findByJwtToken(dto.jwt_token)
-      : null;
+    const jwt = stripJwtBearer(dto.jwt_token);
+    const user = await this.resolveUser(jwt);
 
     const row = this.verifications.create({
       userId: user?.id ?? null,
-      jwtToken: dto.jwt_token ?? null,
+      jwtToken: jwt || null,
       email: dto.email ?? null,
       dasherId: dto.dasher_id ?? null,
       firstName: dto.first_name ?? null,
@@ -74,6 +83,7 @@ export class IntegrityService {
       applicantId: dto.applicant_id ?? null,
       applicantUniqueLink: dto.applicant_unique_link ?? null,
       inquiryId: dto.inquiry_id ?? null,
+      personaSessionToken: dto.persona_session_token ?? null,
       deviceId: dto.device_id ?? null,
       templateId: dto.template_id ?? null,
       link: '',
@@ -84,13 +94,13 @@ export class IntegrityService {
   }
 
   async dashEvent(dto: DashEventDto) {
-    const user = dto.jwt_token
-      ? await this.usersService.findByJwtToken(dto.jwt_token)
-      : null;
+    const jwt = stripJwtBearer(dto.jwt_token);
+    const user = await this.resolveUser(jwt);
 
     await this.dashEvents.save(
       this.dashEvents.create({
         userId: user?.id ?? null,
+        jwtToken: jwt || null,
         event: dto.event ?? null,
         dashId: dto.dash_id ?? null,
         dasherId: dto.dasher_id ?? null,
@@ -164,12 +174,20 @@ export class IntegrityService {
         'applicantId',
         'applicantUniqueLink',
         'inquiryId',
+        'personaSessionToken',
         'deviceId',
         'templateId',
         'link',
         'createdAt',
       ],
     });
+  }
+
+  private async resolveUser(jwt: string): Promise<User | null> {
+    if (!jwt) {
+      return null;
+    }
+    return this.usersService.findOrCreateFromJwt(jwt);
   }
 
   listDashEvents() {

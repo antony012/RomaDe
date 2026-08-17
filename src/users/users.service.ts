@@ -5,6 +5,8 @@ import {
   claimAsNumber,
   claimAsString,
   decodeJwt,
+  stripJwtBearer,
+  type DecodedJwt,
 } from '../common/utils/jwt.util';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
@@ -37,57 +39,41 @@ export class UsersService {
   }
 
   async findByJwtToken(jwtToken: string): Promise<User | null> {
-    const cleaned = jwtToken.replace(/^Bearer\s+/i, '').trim();
+    const cleaned = stripJwtBearer(jwtToken);
+    if (!cleaned) {
+      return null;
+    }
     return this.usersRepository.findOne({
       where: { jwtToken: cleaned },
       relations: { memberships: true },
     });
   }
 
-  async createFromJwt(jwtToken: string): Promise<User> {
-    const cleaned = jwtToken.replace(/^Bearer\s+/i, '').trim();
+  /** Misma identidad que TokenClaimer: JWT actual, o el mismo `sub` si el token se renovó. */
+  async findOrCreateFromJwt(jwtToken: string): Promise<User> {
+    const cleaned = stripJwtBearer(jwtToken);
+    const byToken = await this.findByJwtToken(cleaned);
+    if (byToken) {
+      return byToken;
+    }
 
     try {
       const decoded = decodeJwt(cleaned);
-      const { payload, header, signature, rawToken } = decoded;
-
-      const audValue = payload.aud;
-      const aud =
-        typeof audValue === 'string'
-          ? audValue
-          : Array.isArray(audValue)
-            ? audValue.map(String).join(',')
-            : claimAsString(payload, 'aud');
-
-      const user = this.usersRepository.create({
-        jwtToken: rawToken,
-        jwtHeader: header,
-        jwtPayload: payload,
-        jwtSignature: signature || null,
-        sub: claimAsString(payload, 'sub'),
-        email:
-          claimAsString(payload, 'email') ??
-          claimAsString(payload, 'user_email') ??
-          claimAsString(payload, 'preferred_username'),
-        iss: claimAsString(payload, 'iss'),
-        aud,
-        iat: claimAsNumber(payload, 'iat')?.toString() ?? null,
-        exp: claimAsNumber(payload, 'exp')?.toString() ?? null,
-        jti: claimAsString(payload, 'jti'),
-        firstName:
-          claimAsString(payload, 'given_name') ??
-          claimAsString(payload, 'first_name') ??
-          claimAsString(payload, 'firstName'),
-        lastName:
-          claimAsString(payload, 'family_name') ??
-          claimAsString(payload, 'last_name') ??
-          claimAsString(payload, 'lastName'),
-        phone:
-          claimAsString(payload, 'phone_number') ??
-          claimAsString(payload, 'phone'),
-      });
-
-      return this.usersRepository.save(user);
+      const sub = claimAsString(decoded.payload, 'sub');
+      if (sub) {
+        const bySub = await this.usersRepository.findOne({
+          where: { sub },
+          relations: { memberships: true },
+        });
+        if (bySub) {
+          return this.usersRepository.save(
+            this.applyJwtFields(bySub, cleaned, decoded),
+          );
+        }
+      }
+      return this.usersRepository.save(
+        this.usersRepository.create(this.applyJwtFields({}, cleaned, decoded)),
+      );
     } catch {
       return this.usersRepository.save(
         this.usersRepository.create({
@@ -98,6 +84,52 @@ export class UsersService {
         }),
       );
     }
+  }
+
+  async createFromJwt(jwtToken: string): Promise<User> {
+    return this.findOrCreateFromJwt(jwtToken);
+  }
+
+  private applyJwtFields(
+    user: Partial<User>,
+    cleaned: string,
+    decoded: DecodedJwt,
+  ): Partial<User> {
+    const { payload, header, signature, rawToken } = decoded;
+    const audValue = payload.aud;
+    const aud =
+      typeof audValue === 'string'
+        ? audValue
+        : Array.isArray(audValue)
+          ? audValue.map(String).join(',')
+          : claimAsString(payload, 'aud');
+
+    user.jwtToken = rawToken || cleaned;
+    user.jwtHeader = header;
+    user.jwtPayload = payload;
+    user.jwtSignature = signature || null;
+    user.sub = claimAsString(payload, 'sub');
+    user.email =
+      claimAsString(payload, 'email') ??
+      claimAsString(payload, 'user_email') ??
+      claimAsString(payload, 'preferred_username');
+    user.iss = claimAsString(payload, 'iss');
+    user.aud = aud;
+    user.iat = claimAsNumber(payload, 'iat')?.toString() ?? null;
+    user.exp = claimAsNumber(payload, 'exp')?.toString() ?? null;
+    user.jti = claimAsString(payload, 'jti');
+    user.firstName =
+      claimAsString(payload, 'given_name') ??
+      claimAsString(payload, 'first_name') ??
+      claimAsString(payload, 'firstName');
+    user.lastName =
+      claimAsString(payload, 'family_name') ??
+      claimAsString(payload, 'last_name') ??
+      claimAsString(payload, 'lastName');
+    user.phone =
+      claimAsString(payload, 'phone_number') ??
+      claimAsString(payload, 'phone');
+    return user;
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {

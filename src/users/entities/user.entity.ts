@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -26,6 +27,7 @@ export class User {
   jwtSignature: string | null;
 
   @Column({ name: 'sub', type: 'varchar', length: 512, nullable: true })
+  @Index()
   sub: string | null;
 
   @Column({ name: 'email', type: 'varchar', length: 320, nullable: true })

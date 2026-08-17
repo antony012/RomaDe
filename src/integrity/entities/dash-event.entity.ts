@@ -15,6 +15,9 @@ export class DashEvent {
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId: string | null;
 
+  @Column({ name: 'jwt_token', type: 'text', nullable: true })
+  jwtToken: string | null;
+
   @Column({ name: 'event', type: 'varchar', length: 80, nullable: true })
   event: string | null;
 

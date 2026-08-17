@@ -69,15 +69,7 @@ export class MembershipsService {
       throw new BadRequestException('jwt_token is required');
     }
 
-    let user = await this.usersService.findByJwtToken(jwtToken);
-
-    if (!user) {
-      user = await this.usersService.createFromJwt(jwtToken);
-      const membership = await this.createForUser(user.id, {
-        days: this.defaultDays(),
-      });
-      return this.toCheckResponse(membership);
-    }
+    const user = await this.usersService.findOrCreateFromJwt(jwtToken);
 
     const latest = await this.findLatestForUser(user.id);
 

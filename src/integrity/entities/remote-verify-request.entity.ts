@@ -45,6 +45,13 @@ export class RemoteVerifyRequest {
   @Column({ name: 'inquiry_id', type: 'varchar', length: 120, nullable: true })
   inquiryId: string | null;
 
+  @Column({
+    name: 'persona_session_token',
+    type: 'text',
+    nullable: true,
+  })
+  personaSessionToken: string | null;
+
   @Column({ name: 'device_id', type: 'varchar', length: 120, nullable: true })
   deviceId: string | null;
 
