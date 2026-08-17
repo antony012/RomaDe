@@ -89,7 +89,8 @@ export class IntegrityService {
       link: '',
     });
     const saved = await this.verifications.save(row);
-    saved.link = this.officialVerifyTarget(saved) ?? '';
+    saved.link =
+      this.officialVerifyTarget(saved) ?? this.verifyPageUrl(saved.id);
     return this.verifications.save(saved);
   }
 
