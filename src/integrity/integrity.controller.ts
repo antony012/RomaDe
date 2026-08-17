@@ -51,7 +51,7 @@ export class IntegrityController {
     const row = await this.integrityService.getVerification(id);
     const target = this.integrityService.officialVerifyTarget(row);
     if (target) {
-      return res.redirect(target);
+      return res.redirect(302, target);
     }
     return res
       .type('html')
