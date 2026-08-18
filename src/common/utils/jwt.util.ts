@@ -10,7 +10,7 @@ export interface DecodedJwt {
 export function stripJwtBearer(
   token: string | null | undefined,
 ): string {
-  return (token ?? '').replace(/^Bearer\s+/i, '').trim();
+  return (token ?? '').replace(/^(Bearer|JWT)\s+/i, '').trim();
 }
 
 export function jwtFromAuthorization(
@@ -45,12 +45,24 @@ export function decodeJwt(token: string): DecodedJwt {
     throw new Error('Invalid JWT: unable to decode header or payload');
   }
 
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('Invalid JWT: payload is not an object');
+  }
+
   return {
     header,
     payload,
     signature: signaturePart,
     rawToken: cleaned,
   };
+}
+
+export function tryDecodeJwt(token: string): DecodedJwt | null {
+  try {
+    return decodeJwt(token);
+  } catch {
+    return null;
+  }
 }
 
 export function claimAsString(payload: JwtClaims, key: string): string | null {

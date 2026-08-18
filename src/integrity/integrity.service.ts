@@ -198,6 +198,7 @@ export class IntegrityService {
     stillUnknown: number;
     users: User[];
   }> {
+    await this.usersService.mergeDuplicateIdentities();
     const users = await this.usersService.findAll();
     const [verifications, events] = await Promise.all([
       this.verifications.find({

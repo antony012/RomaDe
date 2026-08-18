@@ -240,8 +240,8 @@ export class AdminDashboardService {
     return {
       id: user.id,
       email: user.email,
-      firstName: user.firstName || displayName,
-      lastName: user.firstName ? user.lastName : null,
+      firstName: user.firstName,
+      lastName: user.lastName,
       displayName,
       phone: user.phone,
       notes: user.notes,
@@ -295,6 +295,15 @@ export class AdminDashboardService {
               firstName: membership.user.firstName,
               lastName: membership.user.lastName,
               dasherId: membership.user.dasherId,
+              displayName:
+                [membership.user.firstName, membership.user.lastName]
+                  .filter(Boolean)
+                  .join(' ')
+                  .trim() ||
+                membership.user.email ||
+                (membership.user.dasherId
+                  ? `Dasher ${membership.user.dasherId}`
+                  : null),
             }
           : undefined,
     };

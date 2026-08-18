@@ -208,10 +208,26 @@ export class MembershipsService {
   }
 
   async findLatestForUser(userId: string): Promise<Membership | null> {
-    return this.membershipsRepository.findOne({
+    const list = await this.membershipsRepository.find({
       where: { userId },
       order: { createdAt: 'DESC' },
     });
+    if (!list.length) {
+      return null;
+    }
+
+    const now = new Date();
+    const active = list.find((membership) =>
+      this.isCurrentlyActive(membership, now),
+    );
+    if (active) {
+      return active;
+    }
+
+    const pending = list.find((membership) =>
+      this.isPendingPayment(membership),
+    );
+    return pending ?? list[0];
   }
 
   async cancel(id: string, dto: CancelMembershipDto = {}): Promise<Membership> {
