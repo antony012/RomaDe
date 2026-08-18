@@ -295,7 +295,33 @@ export class UsersService {
       return keeper;
     }
 
-    return this.keeperByField('dasherId', keys.dasherId);
+    const byDasher = await this.keeperByField('dasherId', keys.dasherId);
+    if (byDasher) {
+      return byDasher;
+    }
+
+    const email = keys.email?.trim();
+    if (email?.includes('@')) {
+      return this.keeperByEmail(email);
+    }
+
+    return null;
+  }
+
+  private async keeperByEmail(email: string): Promise<User | null> {
+    const matches = await this.usersRepository
+      .createQueryBuilder('user')
+      .where('LOWER(user.email) = LOWER(:email)', { email: email.trim() })
+      .orderBy('user.createdAt', 'ASC')
+      .getMany();
+    if (!matches.length) {
+      return null;
+    }
+    const keeper = matches[0];
+    for (const extra of matches.slice(1)) {
+      await this.absorbUser(keeper, extra);
+    }
+    return keeper;
   }
 
   private async keeperByField(

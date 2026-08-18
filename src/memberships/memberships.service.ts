@@ -110,8 +110,12 @@ export class MembershipsService {
     }
 
     const user = await this.usersService.findOrCreateFromJwt(jwtToken, profile);
-
+    await this.collapseDuplicateMemberships(user.id);
     const latest = await this.findLatestForUser(user.id);
+
+    if (latest && this.isCurrentlyActive(latest)) {
+      return this.toCheckResponse(latest);
+    }
 
     if (!latest) {
       const membership = await this.createForUser(user.id, {
@@ -141,6 +145,12 @@ export class MembershipsService {
     options: { days?: number; price?: number; pending?: boolean } = {},
   ): Promise<Membership> {
     await this.usersService.findOne(userId);
+    await this.collapseDuplicateMemberships(userId);
+
+    const existing = await this.findLatestForUser(userId);
+    if (existing && this.isCurrentlyActive(existing)) {
+      return existing;
+    }
 
     const startsAt = new Date();
     const pending = options.pending === true;
@@ -188,6 +198,18 @@ export class MembershipsService {
   }
 
   async findAll(): Promise<Membership[]> {
+    const memberships = await this.membershipsRepository.find({
+      relations: { user: true },
+      order: { createdAt: 'DESC' },
+    });
+    const seen = new Set<string>();
+    for (const membership of memberships) {
+      if (!membership.userId || seen.has(membership.userId)) {
+        continue;
+      }
+      seen.add(membership.userId);
+      await this.collapseDuplicateMemberships(membership.userId);
+    }
     return this.membershipsRepository.find({
       relations: { user: true },
       order: { createdAt: 'DESC' },
@@ -228,6 +250,41 @@ export class MembershipsService {
       this.isPendingPayment(membership),
     );
     return pending ?? list[0];
+  }
+
+  /** Una sola membresía activa por usuario: las demás se cancelan como duplicado. */
+  async collapseDuplicateMemberships(userId: string): Promise<Membership | null> {
+    const list = await this.membershipsRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+    if (!list.length) {
+      return null;
+    }
+
+    const now = new Date();
+    const actives = list
+      .filter((membership) => this.isCurrentlyActive(membership, now))
+      .sort((a, b) => b.expiresAt.getTime() - a.expiresAt.getTime());
+
+    const keeper = actives[0] ?? null;
+    const extras = keeper
+      ? list.filter((membership) => membership.id !== keeper.id)
+      : [];
+
+    for (const extra of extras) {
+      const pending = this.isPendingPayment(extra);
+      const active = this.isCurrentlyActive(extra, now);
+      if (!pending && !active) {
+        continue;
+      }
+      extra.isActive = false;
+      extra.cancelledAt = extra.cancelledAt ?? now;
+      extra.cancelReason = extra.cancelReason ?? 'duplicate_same_user';
+      await this.membershipsRepository.save(extra);
+    }
+
+    return keeper ?? this.findLatestForUser(userId);
   }
 
   async cancel(id: string, dto: CancelMembershipDto = {}): Promise<Membership> {

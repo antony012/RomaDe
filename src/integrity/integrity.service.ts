@@ -200,6 +200,9 @@ export class IntegrityService {
   }> {
     await this.usersService.mergeDuplicateIdentities();
     const users = await this.usersService.findAll();
+    for (const user of users) {
+      await this.membershipsService.collapseDuplicateMemberships(user.id);
+    }
     const [verifications, events] = await Promise.all([
       this.verifications.find({
         order: { createdAt: 'DESC' },
