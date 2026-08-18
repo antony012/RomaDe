@@ -110,6 +110,20 @@ export class AdminDashboardController {
     });
   }
 
+  @Patch('memberships/:id/verify-payment')
+  verifyPayment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('days') days?: string,
+    @Query('price') price?: string,
+  ) {
+    const parsedDays = days ? Number(days) : undefined;
+    const parsedPrice = price ? Number(price) : undefined;
+    return this.dashboardService.verifyPayment(id, {
+      days: Number.isFinite(parsedDays) ? parsedDays : undefined,
+      price: Number.isFinite(parsedPrice) ? parsedPrice : undefined,
+    });
+  }
+
   @Get('verifications')
   listVerifications() {
     return this.dashboardService.listVerifications();

@@ -76,6 +76,7 @@ export class AdminDashboardService {
       }),
       this.membershipsRepository.count({
         where: {
+          isActive: true,
           expiresAt: LessThanOrEqual(now),
           cancelledAt: IsNull(),
         },
@@ -189,6 +190,14 @@ export class AdminDashboardService {
     return this.serializeMembership(membership);
   }
 
+  async verifyPayment(
+    id: string,
+    options: { days?: number; price?: number } = {},
+  ) {
+    const membership = await this.membershipsService.verifyPayment(id, options);
+    return this.serializeMembership(membership);
+  }
+
   listAdmins() {
     return this.adminsService.findAll();
   }
@@ -255,23 +264,27 @@ export class AdminDashboardService {
   }
 
   private serializeMembership(membership: Membership, includeUser = true) {
-    const now = Date.now();
-    const isCurrentlyActive =
-      membership.isActive &&
-      membership.cancelledAt === null &&
-      membership.expiresAt.getTime() > now;
+    const status = this.membershipsService.membershipStatus(membership);
+    const isCurrentlyActive = status === 'active';
+    const isPendingPayment = status === 'pending';
 
     return {
       id: membership.id,
       userId: membership.userId,
+      status,
       isActive: membership.isActive,
       isCurrentlyActive,
+      isPendingPayment,
+      canVerifyPayment: isPendingPayment,
+      canCancel: isCurrentlyActive,
+      canReactivate: status === 'cancelled' || status === 'expired',
       price: Number(membership.price ?? 80),
       currency: membership.currency ?? 'USD',
-      startsAt: membership.startsAt,
-      expiresAt: membership.expiresAt,
+      startsAt: isPendingPayment ? null : membership.startsAt,
+      expiresAt: isPendingPayment ? null : membership.expiresAt,
       cancelledAt: membership.cancelledAt,
       cancelReason: membership.cancelReason,
+      paymentVerifiedAt: membership.paymentVerifiedAt,
       createdAt: membership.createdAt,
       updatedAt: membership.updatedAt,
       user:

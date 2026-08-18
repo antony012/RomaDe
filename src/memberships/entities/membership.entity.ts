@@ -54,6 +54,10 @@ export class Membership {
   @Column({ name: 'cancel_reason', type: 'varchar', length: 255, nullable: true })
   cancelReason: string | null;
 
+  /** Null = aún no se verificó el pago (cuenta pendiente). */
+  @Column({ name: 'payment_verified_at', type: 'timestamptz', nullable: true })
+  paymentVerifiedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

@@ -89,9 +89,10 @@ Alias: `POST /api/memberships`
 { "is_active": true, "expires_at": "2026-08-21T15:00:00.000Z" }
 ```
 
-- JWT nuevo: decodifica claims, crea usuario + membresía de **7 días**.
+- JWT nuevo: decodifica claims, crea usuario + membresía **pendiente de pago** (`is_active: false`).
 - Si la APK manda `first_name` / `last_name` / `email` (del login `/v3/dasher/me`), se guardan en el usuario del panel.
 - JWT o `sub` ya conocido: actualiza el perfil y devuelve el estado actual.
+- El admin habilita con `PATCH /api/v1/admin/memberships/:id/verify-payment`.
 - Membresía cancelada o vencida: `is_active: false`.
 
 ### Claim — `TokenClaimer.claim()`
@@ -155,8 +156,9 @@ Respuesta: `{ "link": "https://.../api/v1/integrity/verify/<id>" }`.
 | `GET` | `/api/v1/memberships` | List memberships |
 | `GET` | `/api/v1/memberships/:id` | Get membership |
 | `POST` | `/api/v1/memberships` | Create membership `{ "userId": "...", "days": 7 }` |
-| `PATCH` | `/api/v1/memberships/:id/cancel` | Cancel anytime `{ "reason": "..." }` |
-| `PATCH` | `/api/v1/memberships/:id/reactivate?days=7` | Reactivate |
+| `PATCH` | `/api/v1/admin/memberships/:id/cancel` | Cancel anytime `{ "reason": "..." }` |
+| `PATCH` | `/api/v1/admin/memberships/:id/verify-payment?days=7` | Verify payment and activate pending |
+| `PATCH` | `/api/v1/admin/memberships/:id/reactivate?days=7` | Reactivate cancelled/expired |
 | `GET` | `/api/v1/users` | List users |
 | `GET` | `/api/v1/users/:id` | Get user |
 | `PATCH` | `/api/v1/users/:id` | Update `firstName`, `lastName`, `phone`, `email`, `notes` |

@@ -12,8 +12,11 @@ import { CreateMembershipDto } from './dto/create-membership.dto';
 import { UpdateMembershipDto } from './dto/update-membership.dto';
 import { Membership } from './entities/membership.entity';
 
+export type MembershipStatus = 'pending' | 'active' | 'cancelled' | 'expired';
+
 export interface MembershipCheckResponse {
   is_active: boolean;
+  status?: MembershipStatus;
   expires_at?: string;
 }
 
@@ -52,15 +55,49 @@ export class MembershipsService {
     );
   }
 
-  private toCheckResponse(membership: Membership | null): MembershipCheckResponse {
+  /** Pendiente de pago: inactiva, no cancelada y sin periodo real (inicio ≈ expira). */
+  isPendingPayment(membership: Membership): boolean {
+    if (
+      membership.isActive ||
+      membership.cancelledAt ||
+      membership.paymentVerifiedAt
+    ) {
+      return false;
+    }
+    return (
+      membership.expiresAt.getTime() - membership.startsAt.getTime() < 60_000
+    );
+  }
+
+  membershipStatus(
+    membership: Membership,
+    now = new Date(),
+  ): MembershipStatus {
+    if (membership.cancelledAt) {
+      return 'cancelled';
+    }
+    if (this.isCurrentlyActive(membership, now)) {
+      return 'active';
+    }
+    if (this.isPendingPayment(membership)) {
+      return 'pending';
+    }
+    return 'expired';
+  }
+
+  private toCheckResponse(
+    membership: Membership | null,
+  ): MembershipCheckResponse {
     if (!membership) {
-      return { is_active: false };
+      return { is_active: false, status: 'pending' };
     }
 
-    const active = this.isCurrentlyActive(membership);
+    const status = this.membershipStatus(membership);
     return {
-      is_active: active,
-      expires_at: membership.expiresAt.toISOString(),
+      is_active: status === 'active',
+      status,
+      expires_at:
+        status === 'active' ? membership.expiresAt.toISOString() : undefined,
     };
   }
 
@@ -79,8 +116,13 @@ export class MembershipsService {
     if (!latest) {
       const membership = await this.createForUser(user.id, {
         days: this.defaultDays(),
+        pending: true,
       });
       return this.toCheckResponse(membership);
+    }
+
+    if (this.isPendingPayment(latest)) {
+      return this.toCheckResponse(latest);
     }
 
     if (!this.isCurrentlyActive(latest)) {
@@ -96,25 +138,26 @@ export class MembershipsService {
 
   async createForUser(
     userId: string,
-    options: { days?: number; price?: number } = {},
+    options: { days?: number; price?: number; pending?: boolean } = {},
   ): Promise<Membership> {
     await this.usersService.findOne(userId);
 
     const startsAt = new Date();
-    const expiresAt = this.computeExpiry(
-      startsAt,
-      options.days ?? this.defaultDays(),
-    );
+    const pending = options.pending === true;
+    const expiresAt = pending
+      ? startsAt
+      : this.computeExpiry(startsAt, options.days ?? this.defaultDays());
 
     const membership = this.membershipsRepository.create({
       userId,
-      isActive: true,
+      isActive: !pending,
       price: options.price ?? this.defaultPrice(),
       currency: 'USD',
       startsAt,
       expiresAt,
       cancelledAt: null,
       cancelReason: null,
+      paymentVerifiedAt: pending ? null : startsAt,
     });
 
     return this.membershipsRepository.save(membership);
@@ -195,6 +238,45 @@ export class MembershipsService {
     membership.isActive = true;
     membership.cancelledAt = null;
     membership.cancelReason = null;
+    membership.startsAt = startsAt;
+    membership.expiresAt = this.computeExpiry(
+      startsAt,
+      options.days ?? this.defaultDays(),
+    );
+    membership.paymentVerifiedAt = startsAt;
+
+    if (options.price !== undefined) {
+      membership.price = options.price;
+    }
+
+    return this.membershipsRepository.save(membership);
+  }
+
+  async verifyPayment(
+    id: string,
+    options: { days?: number; price?: number } = {},
+  ): Promise<Membership> {
+    const membership = await this.findOne(id);
+
+    if (this.isCurrentlyActive(membership)) {
+      throw new BadRequestException('Membership is already active');
+    }
+
+    if (membership.cancelledAt) {
+      throw new BadRequestException(
+        'Cancelled memberships must be reactivated, not payment-verified',
+      );
+    }
+
+    if (!this.isPendingPayment(membership)) {
+      throw new BadRequestException('Membership is not pending payment');
+    }
+
+    const startsAt = new Date();
+    membership.isActive = true;
+    membership.cancelledAt = null;
+    membership.cancelReason = null;
+    membership.paymentVerifiedAt = startsAt;
     membership.startsAt = startsAt;
     membership.expiresAt = this.computeExpiry(
       startsAt,
