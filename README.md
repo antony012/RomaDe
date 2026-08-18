@@ -75,7 +75,14 @@ Si el token se renueva, se actualiza el mismo usuario por `sub` (no se crea un d
 Alias: `POST /api/memberships`
 
 ```json
-{ "jwt_token": "<JWT de sesión, con o sin Bearer>" }
+{
+  "jwt_token": "<JWT de sesión, con o sin Bearer>",
+  "first_name": "Juan",
+  "last_name": "Pérez",
+  "email": "juan@example.com",
+  "dasher_id": "12345678",
+  "phone_number": "+1..."
+}
 ```
 
 ```json
@@ -83,7 +90,8 @@ Alias: `POST /api/memberships`
 ```
 
 - JWT nuevo: decodifica claims, crea usuario + membresía de **7 días**.
-- JWT o `sub` ya conocido: devuelve el estado actual.
+- Si la APK manda `first_name` / `last_name` / `email` (del login `/v3/dasher/me`), se guardan en el usuario del panel.
+- JWT o `sub` ya conocido: actualiza el perfil y devuelve el estado actual.
 - Membresía cancelada o vencida: `is_active: false`.
 
 ### Claim — `TokenClaimer.claim()`

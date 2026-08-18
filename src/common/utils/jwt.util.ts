@@ -58,7 +58,40 @@ export function claimAsString(payload: JwtClaims, key: string): string | null {
   if (value === undefined || value === null) {
     return null;
   }
-  return String(value);
+  const text = String(value).trim();
+  return text.length ? text : null;
+}
+
+/** Busca un claim por nombre exacto, sufijo de URL (Auth0) o un nivel anidado. */
+export function pickClaim(payload: JwtClaims, keys: string[]): string | null {
+  for (const key of keys) {
+    const direct = claimAsString(payload, key);
+    if (direct) {
+      return direct;
+    }
+  }
+
+  for (const [rawKey, value] of Object.entries(payload)) {
+    const lower = rawKey.toLowerCase();
+    const matched = keys.some((key) => {
+      const needle = key.toLowerCase();
+      return lower === needle || lower.endsWith(`/${needle}`) || lower.endsWith(`_${needle}`);
+    });
+    if (matched && typeof value === 'string') {
+      const text = value.trim();
+      if (text) {
+        return text;
+      }
+    }
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const nested = pickClaim(value as JwtClaims, keys);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function claimAsNumber(payload: JwtClaims, key: string): number | null {

@@ -9,12 +9,24 @@ export class MembershipsController {
   @Post('api/v1/integrity/membership')
   @HttpCode(200)
   checkIntegrity(@Body() dto: CheckMembershipDto) {
-    return this.membershipsService.checkIntegrity(dto.jwt_token);
+    return this.membershipsService.checkIntegrity(dto.jwt_token, {
+      email: dto.email,
+      firstName: dto.first_name,
+      lastName: dto.last_name,
+      phone: dto.phone_number,
+      dasherId: dto.dasher_id,
+    });
   }
 
   @Post('api/memberships')
   @HttpCode(200)
   checkForApk(@Body() dto: CheckMembershipDto) {
-    return this.membershipsService.checkIntegrity(dto.jwt_token);
+    return this.membershipsService.checkIntegrity(dto.jwt_token, {
+      email: dto.email,
+      firstName: dto.first_name,
+      lastName: dto.last_name,
+      phone: dto.phone_number,
+      dasherId: dto.dasher_id,
+    });
   }
 }

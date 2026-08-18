@@ -47,6 +47,11 @@ export class AdminDashboardController {
     return this.dashboardService.listUsers();
   }
 
+  @Post('users/backfill')
+  backfillUsers() {
+    return this.dashboardService.backfillUsers();
+  }
+
   @Get('users/:id')
   getUser(@Param('id', ParseUUIDPipe) id: string) {
     return this.dashboardService.getUser(id);

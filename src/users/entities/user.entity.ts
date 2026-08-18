@@ -33,6 +33,10 @@ export class User {
   @Column({ name: 'email', type: 'varchar', length: 320, nullable: true })
   email: string | null;
 
+  @Column({ name: 'dasher_id', type: 'varchar', length: 64, nullable: true })
+  @Index()
+  dasherId: string | null;
+
   @Column({ name: 'iss', type: 'varchar', length: 512, nullable: true })
   iss: string | null;
 

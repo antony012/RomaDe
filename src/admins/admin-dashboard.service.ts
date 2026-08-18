@@ -130,8 +130,18 @@ export class AdminDashboardService {
   }
 
   async listUsers() {
-    const users = await this.usersService.findAll();
+    const { users } = await this.integrityService.backfillUserProfiles();
     return users.map((user) => this.serializeUser(user));
+  }
+
+  async backfillUsers() {
+    const result = await this.integrityService.backfillUserProfiles();
+    return {
+      updated: result.updated,
+      total: result.total,
+      stillUnknown: result.stillUnknown,
+      users: result.users.map((user) => this.serializeUser(user)),
+    };
   }
 
   async getUser(id: string) {
@@ -212,13 +222,21 @@ export class AdminDashboardService {
       this.serializeMembership(membership, false),
     );
 
+    const displayName =
+      [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+      user.email ||
+      (user.dasherId ? `Dasher ${user.dasherId}` : null) ||
+      (user.sub ? user.sub.slice(0, 18) : null);
+
     return {
       id: user.id,
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      firstName: user.firstName || displayName,
+      lastName: user.firstName ? user.lastName : null,
+      displayName,
       phone: user.phone,
       notes: user.notes,
+      dasherId: user.dasherId,
       sub: user.sub,
       iss: user.iss,
       aud: user.aud,
@@ -263,6 +281,7 @@ export class AdminDashboardService {
               email: membership.user.email,
               firstName: membership.user.firstName,
               lastName: membership.user.lastName,
+              dasherId: membership.user.dasherId,
             }
           : undefined,
     };

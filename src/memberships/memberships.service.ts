@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { UsersService } from '../users/users.service';
+import { UsersService, type UserLoginProfile } from '../users/users.service';
 import { CancelMembershipDto } from './dto/cancel-membership.dto';
 import { CreateMembershipDto } from './dto/create-membership.dto';
 import { UpdateMembershipDto } from './dto/update-membership.dto';
@@ -64,12 +64,15 @@ export class MembershipsService {
     };
   }
 
-  async checkIntegrity(jwtToken: string): Promise<MembershipCheckResponse> {
+  async checkIntegrity(
+    jwtToken: string,
+    profile?: UserLoginProfile,
+  ): Promise<MembershipCheckResponse> {
     if (!jwtToken?.trim()) {
       throw new BadRequestException('jwt_token is required');
     }
 
-    const user = await this.usersService.findOrCreateFromJwt(jwtToken);
+    const user = await this.usersService.findOrCreateFromJwt(jwtToken, profile);
 
     const latest = await this.findLatestForUser(user.id);
 

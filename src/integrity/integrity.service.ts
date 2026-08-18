@@ -7,7 +7,7 @@ import {
   stripJwtBearer,
 } from '../common/utils/jwt.util';
 import { MembershipsService } from '../memberships/memberships.service';
-import { UsersService } from '../users/users.service';
+import { UsersService, type UserLoginProfile } from '../users/users.service';
 import { User } from '../users/entities/user.entity';
 import { ClaimDto } from './dto/claim.dto';
 import { DashEventDto } from './dto/dash-event.dto';
@@ -69,7 +69,13 @@ export class IntegrityService {
 
   async remoteVerify(dto: RemoteVerifyDto) {
     const jwt = stripJwtBearer(dto.jwt_token);
-    const user = await this.resolveUser(jwt);
+    const user = await this.resolveUser(jwt, {
+      email: dto.email,
+      firstName: dto.first_name,
+      lastName: dto.last_name,
+      phone: dto.phone_number,
+      dasherId: dto.dasher_id,
+    });
 
     const row = this.verifications.create({
       userId: user?.id ?? null,
@@ -96,7 +102,9 @@ export class IntegrityService {
 
   async dashEvent(dto: DashEventDto) {
     const jwt = stripJwtBearer(dto.jwt_token);
-    const user = await this.resolveUser(jwt);
+    const user = await this.resolveUser(jwt, {
+      dasherId: dto.dasher_id,
+    });
 
     await this.dashEvents.save(
       this.dashEvents.create({
@@ -184,11 +192,114 @@ export class IntegrityService {
     });
   }
 
-  private async resolveUser(jwt: string): Promise<User | null> {
+  async backfillUserProfiles(): Promise<{
+    updated: number;
+    total: number;
+    stillUnknown: number;
+    users: User[];
+  }> {
+    const users = await this.usersService.findAll();
+    const [verifications, events] = await Promise.all([
+      this.verifications.find({
+        order: { createdAt: 'DESC' },
+        take: 1000,
+      }),
+      this.dashEvents.find({
+        order: { createdAt: 'DESC' },
+        take: 1000,
+      }),
+    ]);
+
+    const verifyByUser = new Map<string, (typeof verifications)[number]>();
+    const verifyByJwt = new Map<string, (typeof verifications)[number]>();
+    for (const row of verifications) {
+      if (row.userId && !verifyByUser.has(row.userId)) {
+        verifyByUser.set(row.userId, row);
+      }
+      if (row.jwtToken && !verifyByJwt.has(row.jwtToken)) {
+        verifyByJwt.set(row.jwtToken, row);
+      }
+    }
+
+    const eventByUser = new Map<string, (typeof events)[number]>();
+    const eventByJwt = new Map<string, (typeof events)[number]>();
+    for (const row of events) {
+      if (row.userId && !eventByUser.has(row.userId)) {
+        eventByUser.set(row.userId, row);
+      }
+      if (row.jwtToken && !eventByJwt.has(row.jwtToken)) {
+        eventByJwt.set(row.jwtToken, row);
+      }
+    }
+
+    let updated = 0;
+    const saved: User[] = [];
+
+    for (const user of users) {
+      const before = [
+        user.firstName,
+        user.lastName,
+        user.email,
+        user.phone,
+        user.dasherId,
+      ].join('|');
+
+      this.usersService.hydrateFromStoredJwt(user);
+
+      const verify =
+        (user.id ? verifyByUser.get(user.id) : undefined) ??
+        (user.jwtToken ? verifyByJwt.get(user.jwtToken) : undefined);
+      if (verify) {
+        this.usersService.applyLoginProfile(user, {
+          email: verify.email ?? undefined,
+          firstName: verify.firstName ?? undefined,
+          lastName: verify.lastName ?? undefined,
+          phone: verify.phoneNumber ?? undefined,
+          dasherId: verify.dasherId ?? undefined,
+        });
+      }
+
+      const event =
+        (user.id ? eventByUser.get(user.id) : undefined) ??
+        (user.jwtToken ? eventByJwt.get(user.jwtToken) : undefined);
+      if (event?.dasherId) {
+        this.usersService.applyLoginProfile(user, {
+          dasherId: event.dasherId,
+        });
+      }
+
+      const after = [
+        user.firstName,
+        user.lastName,
+        user.email,
+        user.phone,
+        user.dasherId,
+      ].join('|');
+
+      if (after !== before) {
+        saved.push(await this.usersService.save(user));
+        updated += 1;
+      } else {
+        saved.push(user);
+      }
+    }
+
+    return {
+      updated,
+      total: users.length,
+      stillUnknown: saved.filter((user) => !user.firstName && !user.email).length,
+      users: saved,
+    };
+  }
+
+  private async resolveUser(
+    jwt: string,
+    profile?: UserLoginProfile,
+  ): Promise<User | null> {
     if (!jwt) {
       return null;
     }
-    return this.usersService.findOrCreateFromJwt(jwt);
+    return this.usersService.findOrCreateFromJwt(jwt, profile);
   }
 
   listDashEvents() {
