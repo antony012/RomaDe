@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AdminsModule } from './admins/admins.module';
 import { HealthController } from './health.controller';
 import { typeormOptions } from './config/database';
+import { DatabaseSecurityService } from './config/database-security.service';
 import { IntegrityModule } from './integrity/integrity.module';
 import { MembershipsModule } from './memberships/memberships.module';
 import { UsersModule } from './users/users.module';
@@ -25,5 +26,6 @@ import { UsersModule } from './users/users.module';
     AdminsModule,
   ],
   controllers: [HealthController],
+  providers: [DatabaseSecurityService],
 })
 export class AppModule {}

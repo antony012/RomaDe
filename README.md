@@ -24,6 +24,14 @@ API: `http://localhost:3100` (o el `PORT` de `.env`)
 
 TypeORM crea las tablas `user`, `membership` y `admin` al arrancar (`synchronize: true`).
 
+## Seguridad Supabase (RLS)
+
+El Security Advisor marca *RLS Disabled in Public* porque las tablas están en `public` y PostgREST las expone. RomaDe **no** usa esa API: Nest entra por `DATABASE_URL` como `postgres`.
+
+Activa RLS **sin políticas** para `anon` / `authenticated` (nadie lee por REST). El rol `postgres` sigue bypaseando RLS, así que la APK y el panel no cambian.
+
+Pega `sql/enable-rls.sql` en **Supabase → SQL Editor → Run**. Al arrancar, el API vuelve a aplicar lo mismo.
+
 ## Admin API (para el dashboard externo)
 
 Login:
