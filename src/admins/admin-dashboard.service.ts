@@ -277,7 +277,9 @@ export class AdminDashboardService {
       isPendingPayment,
       canVerifyPayment: isPendingPayment,
       canCancel: isCurrentlyActive,
-      canReactivate: status === 'cancelled' || status === 'expired',
+      canReactivate:
+        (status === 'cancelled' || status === 'expired') &&
+        membership.cancelReason !== 'duplicate_same_user',
       price: Number(membership.price ?? 80),
       currency: membership.currency ?? 'USD',
       startsAt: isPendingPayment ? null : membership.startsAt,
