@@ -68,8 +68,7 @@ export class UsersService {
     const cleaned = stripJwtBearer(jwtToken);
     const decoded = tryDecodeJwt(cleaned);
     const sub = this.identitySub(decoded);
-    const dasherId =
-      profile?.dasherId?.trim() || this.identityDasher(decoded);
+    const dasherId = profile?.dasherId?.trim() || this.identityDasher(decoded);
 
     let user = await this.findByIdentity({
       jwtToken: cleaned,
@@ -113,7 +112,8 @@ export class UsersService {
       this.hydrateFromStoredJwt(user);
       if (user.sub) add(`sub:${user.sub}`, user);
       if (user.dasherId) add(`dasher:${user.dasherId}`, user);
-      if (user.email?.includes('@')) add(`email:${user.email.toLowerCase()}`, user);
+      if (user.email?.includes('@'))
+        add(`email:${user.email.toLowerCase()}`, user);
     }
 
     const absorbed = new Set<string>();
@@ -204,11 +204,7 @@ export class UsersService {
     ]);
     const fullName = pickClaim(payload, ['name', 'full_name', 'fullName']);
     const phone = pickClaim(payload, ['phone_number', 'phone']);
-    const dasherId = pickClaim(payload, [
-      'dasher_id',
-      'dasherId',
-      'dasherID',
-    ]);
+    const dasherId = pickClaim(payload, ['dasher_id', 'dasherId', 'dasherID']);
 
     if (email) user.email = email;
     if (firstName) user.firstName = firstName;
@@ -283,18 +279,6 @@ export class UsersService {
     dasherId?: string | null;
     email?: string;
   }): Promise<User | null> {
-    if (keys.jwtToken) {
-      const byJwt = await this.findByJwtToken(keys.jwtToken);
-      if (byJwt) {
-        return byJwt;
-      }
-    }
-
-    const keeper = await this.keeperByField('sub', keys.sub);
-    if (keeper) {
-      return keeper;
-    }
-
     const byDasher = await this.keeperByField('dasherId', keys.dasherId);
     if (byDasher) {
       return byDasher;
@@ -302,7 +286,22 @@ export class UsersService {
 
     const email = keys.email?.trim();
     if (email?.includes('@')) {
-      return this.keeperByEmail(email);
+      const byEmail = await this.keeperByEmail(email);
+      if (byEmail) {
+        return byEmail;
+      }
+    }
+
+    const bySub = await this.keeperByField('sub', keys.sub);
+    if (bySub) {
+      return bySub;
+    }
+
+    if (keys.jwtToken) {
+      const byJwt = await this.findByJwtToken(keys.jwtToken);
+      if (byJwt) {
+        return byJwt;
+      }
     }
 
     return null;

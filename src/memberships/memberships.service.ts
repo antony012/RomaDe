@@ -36,7 +36,10 @@ export class MembershipsService {
   }
 
   private defaultPrice(): number {
-    const raw = this.configService.get<string>('MEMBERSHIP_DEFAULT_PRICE', '80');
+    const raw = this.configService.get<string>(
+      'MEMBERSHIP_DEFAULT_PRICE',
+      '80',
+    );
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 80;
   }
@@ -69,10 +72,7 @@ export class MembershipsService {
     );
   }
 
-  membershipStatus(
-    membership: Membership,
-    now = new Date(),
-  ): MembershipStatus {
+  membershipStatus(membership: Membership, now = new Date()): MembershipStatus {
     if (membership.cancelledAt) {
       return 'cancelled';
     }
@@ -190,10 +190,7 @@ export class MembershipsService {
     }
 
     if (dto.days !== undefined) {
-      membership.expiresAt = this.computeExpiry(
-        membership.startsAt,
-        dto.days,
-      );
+      membership.expiresAt = this.computeExpiry(membership.startsAt, dto.days);
     }
 
     return this.membershipsRepository.save(membership);
@@ -252,8 +249,13 @@ export class MembershipsService {
     return pending ?? list[0];
   }
 
-  /** Limpia pendientes duplicados. Nunca cancela una membresía que sigue vigente. */
-  async collapseDuplicateMemberships(userId: string): Promise<Membership | null> {
+  /**
+   * Restaura cancelaciones automáticas antiguas.
+   * Una reconciliación de identidad nunca debe cancelar ni acortar membresías.
+   */
+  async collapseDuplicateMemberships(
+    userId: string,
+  ): Promise<Membership | null> {
     const list = await this.membershipsRepository.find({
       where: { userId },
       order: { createdAt: 'ASC' },
@@ -263,71 +265,33 @@ export class MembershipsService {
     }
 
     const now = new Date();
-    let actives = list.filter((membership) =>
-      this.isCurrentlyActive(membership, now),
+    const recoverable = list.filter(
+      (membership) =>
+        membership.cancelReason === 'duplicate_same_user' &&
+        membership.expiresAt.getTime() > now.getTime() &&
+        (!membership.isActive || membership.cancelledAt !== null),
     );
 
-    if (!actives.length) {
-      const recoverable = list
-        .filter(
-          (membership) =>
-            membership.cancelReason === 'duplicate_same_user' &&
-            membership.expiresAt.getTime() > now.getTime(),
-        )
-        .sort((a, b) => b.expiresAt.getTime() - a.expiresAt.getTime());
-
-      const restore = recoverable[0];
-      if (restore) {
-        restore.isActive = true;
-        restore.cancelledAt = null;
-        restore.cancelReason = null;
-        await this.membershipsRepository.save(restore);
-        actives = [restore];
-      }
+    for (const membership of recoverable) {
+      membership.isActive = true;
+      membership.cancelledAt = null;
+      // Conserva la marca interna para no volver a sumar un cobro duplicado.
     }
 
-    if (!actives.length) {
-      return this.findLatestForUser(userId);
+    if (recoverable.length) {
+      await this.membershipsRepository.save(recoverable);
     }
 
-    const keeper = [...actives].sort(
-      (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
-    )[0];
-    const latestExpiry = Math.max(
-      ...actives.map((membership) => membership.expiresAt.getTime()),
-    );
-    if (keeper.expiresAt.getTime() < latestExpiry) {
-      keeper.expiresAt = new Date(latestExpiry);
-      await this.membershipsRepository.save(keeper);
-    }
-
-    for (const extra of list) {
-      if (extra.id === keeper.id) {
-        continue;
-      }
-      if (this.isCurrentlyActive(extra, now)) {
-        extra.isActive = false;
-        extra.cancelledAt = extra.cancelledAt ?? now;
-        extra.cancelReason = 'duplicate_same_user';
-        await this.membershipsRepository.save(extra);
-        continue;
-      }
-      if (this.isPendingPayment(extra)) {
-        extra.isActive = false;
-        extra.cancelledAt = extra.cancelledAt ?? now;
-        extra.cancelReason = extra.cancelReason ?? 'duplicate_same_user';
-        await this.membershipsRepository.save(extra);
-      }
-    }
-
-    return keeper;
+    return this.findLatestForUser(userId);
   }
 
   async cancel(id: string, dto: CancelMembershipDto = {}): Promise<Membership> {
     const membership = await this.findOne(id);
 
     if (!membership.isActive || membership.cancelledAt) {
-      throw new BadRequestException('Membership is already cancelled or inactive');
+      throw new BadRequestException(
+        'Membership is already cancelled or inactive',
+      );
     }
 
     membership.isActive = false;
@@ -343,7 +307,11 @@ export class MembershipsService {
   ): Promise<Membership> {
     const membership = await this.findOne(id);
     const current = await this.findLatestForUser(membership.userId);
-    if (current && this.isCurrentlyActive(current) && current.id !== membership.id) {
+    if (
+      current &&
+      this.isCurrentlyActive(current) &&
+      current.id !== membership.id
+    ) {
       return current;
     }
 
