@@ -30,10 +30,14 @@ export class AdminDashboardService {
   private async sumRevenueSince(from?: Date): Promise<number> {
     const qb = this.membershipsRepository
       .createQueryBuilder('m')
-      .select('COALESCE(SUM(m.price), 0)', 'total');
+      .select('COALESCE(SUM(m.price), 0)', 'total')
+      .where('m.counts_toward_revenue = true')
+      .andWhere('m.cancel_reason IS DISTINCT FROM :dup', {
+        dup: 'duplicate_same_user',
+      });
 
     if (from) {
-      qb.where('m.created_at >= :from', { from });
+      qb.andWhere('m.created_at >= :from', { from });
     }
 
     const raw = await qb.getRawOne<{ total: string | number }>();
@@ -157,7 +161,29 @@ export class AdminDashboardService {
 
   async listMemberships() {
     const memberships = await this.membershipsService.findAll();
+    for (const membership of memberships) {
+      if (!membership.user && membership.userId) {
+        membership.user =
+          (await this.usersRepository.findOne({
+            where: { id: membership.userId },
+          })) ?? membership.user;
+      }
+    }
     return memberships.map((membership) => this.serializeMembership(membership));
+  }
+
+  async purgeCancelledMemberships() {
+    return this.membershipsService.purgeCancelled();
+  }
+
+  async resetEarnings() {
+    const result = await this.membershipsRepository
+      .createQueryBuilder()
+      .update(Membership)
+      .set({ countsTowardRevenue: false })
+      .where('counts_toward_revenue = true')
+      .execute();
+    return { cleared: result.affected ?? 0 };
   }
 
   async getMembership(id: string) {
@@ -280,10 +306,11 @@ export class AdminDashboardService {
       canReactivate:
         (status === 'cancelled' || status === 'expired') &&
         membership.cancelReason !== 'duplicate_same_user',
+      countsTowardRevenue: membership.countsTowardRevenue !== false,
       price: Number(membership.price ?? 80),
       currency: membership.currency ?? 'USD',
-      startsAt: isPendingPayment ? null : membership.startsAt,
-      expiresAt: isPendingPayment ? null : membership.expiresAt,
+      startsAt: membership.startsAt,
+      expiresAt: membership.expiresAt,
       cancelledAt: membership.cancelledAt,
       cancelReason: membership.cancelReason,
       paymentVerifiedAt: membership.paymentVerifiedAt,

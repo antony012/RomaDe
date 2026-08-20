@@ -5,8 +5,7 @@ export class UpdateMembershipDto {
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
-  @IsPositive()
-  @Min(0.01)
+  @Min(0)
   price?: number;
 
   @IsOptional()

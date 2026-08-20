@@ -58,6 +58,10 @@ export class Membership {
   @Column({ name: 'payment_verified_at', type: 'timestamptz', nullable: true })
   paymentVerifiedAt: Date | null;
 
+  /** Si es false, este cobro no entra en el total ganado del panel. */
+  @Column({ name: 'counts_toward_revenue', type: 'boolean', default: true })
+  countsTowardRevenue: boolean;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

@@ -37,6 +37,11 @@ export class AdminDashboardController {
     return this.dashboardService.getOverview();
   }
 
+  @Post('earnings/reset')
+  resetEarnings() {
+    return this.dashboardService.resetEarnings();
+  }
+
   @Get('dashboard')
   getOverview() {
     return this.dashboardService.getOverview();
@@ -68,6 +73,11 @@ export class AdminDashboardController {
   @Get('memberships')
   listMemberships() {
     return this.dashboardService.listMemberships();
+  }
+
+  @Delete('memberships/cancelled')
+  purgeCancelledMemberships() {
+    return this.dashboardService.purgeCancelledMemberships();
   }
 
   @Get('memberships/:id')

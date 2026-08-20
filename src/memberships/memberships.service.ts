@@ -168,6 +168,7 @@ export class MembershipsService {
       cancelledAt: null,
       cancelReason: null,
       paymentVerifiedAt: pending ? null : startsAt,
+      countsTowardRevenue: !pending,
     });
 
     return this.membershipsRepository.save(membership);
@@ -185,6 +186,7 @@ export class MembershipsService {
 
     if (dto.price !== undefined) {
       membership.price = dto.price;
+      membership.countsTowardRevenue = true;
     }
 
     if (dto.days !== undefined) {
@@ -198,22 +200,20 @@ export class MembershipsService {
   }
 
   async findAll(): Promise<Membership[]> {
-    const memberships = await this.membershipsRepository.find({
-      relations: { user: true },
-      order: { createdAt: 'DESC' },
-    });
-    const seen = new Set<string>();
-    for (const membership of memberships) {
-      if (!membership.userId || seen.has(membership.userId)) {
-        continue;
-      }
-      seen.add(membership.userId);
-      await this.collapseDuplicateMemberships(membership.userId);
-    }
     return this.membershipsRepository.find({
       relations: { user: true },
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async purgeCancelled(): Promise<{ deleted: number }> {
+    const result = await this.membershipsRepository
+      .createQueryBuilder()
+      .delete()
+      .from(Membership)
+      .where('cancelled_at IS NOT NULL')
+      .execute();
+    return { deleted: result.affected ?? 0 };
   }
 
   async findOne(id: string): Promise<Membership> {
@@ -358,6 +358,7 @@ export class MembershipsService {
       options.days ?? this.defaultDays(),
     );
     membership.paymentVerifiedAt = startsAt;
+    membership.countsTowardRevenue = true;
 
     if (options.price !== undefined) {
       membership.price = options.price;
@@ -391,6 +392,7 @@ export class MembershipsService {
     membership.cancelledAt = null;
     membership.cancelReason = null;
     membership.paymentVerifiedAt = startsAt;
+    membership.countsTowardRevenue = true;
     membership.startsAt = startsAt;
     membership.expiresAt = this.computeExpiry(
       startsAt,
