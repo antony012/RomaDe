@@ -117,32 +117,65 @@ export class MembershipsService {
       return this.toCheckResponse(latest);
     }
 
-    if (!latest) {
-      const membership = await this.createForUser(user.id, {
-        days: this.defaultDays(),
-        pending: true,
-      });
-      return this.toCheckResponse(membership);
-    }
-
-    if (this.isPendingPayment(latest)) {
+    // Cancelación manual desde el panel: no reactivar sola.
+    if (latest && this.isAdminBlocked(latest)) {
       return this.toCheckResponse(latest);
     }
 
-    if (!this.isCurrentlyActive(latest)) {
-      if (latest.isActive) {
-        latest.isActive = false;
-        await this.membershipsRepository.save(latest);
-      }
-      return this.toCheckResponse(latest);
+    // Reemplaza la fila existente (o crea una) y siempre entra activa.
+    const membership = await this.activateOrReplaceForUser(user.id, latest);
+    return this.toCheckResponse(membership);
+  }
+
+  private isAdminBlocked(membership: Membership): boolean {
+    if (!membership.cancelledAt) {
+      return false;
+    }
+    return membership.cancelReason !== 'duplicate_same_user';
+  }
+
+  /** Activa in-place la membresía actual o crea una sola fila activa. */
+  private async activateOrReplaceForUser(
+    userId: string,
+    existing: Membership | null,
+  ): Promise<Membership> {
+    const startsAt = new Date();
+    const expiresAt = this.computeExpiry(startsAt, this.defaultDays());
+
+    if (existing && !this.isAdminBlocked(existing)) {
+      existing.isActive = true;
+      existing.cancelledAt = null;
+      existing.cancelReason = null;
+      existing.startsAt = startsAt;
+      existing.expiresAt = expiresAt;
+      existing.paymentVerifiedAt = null;
+      existing.countsTowardRevenue = false;
+      return this.membershipsRepository.save(existing);
     }
 
-    return this.toCheckResponse(latest);
+    const created = this.membershipsRepository.create({
+      userId,
+      isActive: true,
+      price: this.defaultPrice(),
+      currency: 'USD',
+      startsAt,
+      expiresAt,
+      cancelledAt: null,
+      cancelReason: null,
+      paymentVerifiedAt: null,
+      countsTowardRevenue: false,
+    });
+    return this.membershipsRepository.save(created);
   }
 
   async createForUser(
     userId: string,
-    options: { days?: number; price?: number; pending?: boolean } = {},
+    options: {
+      days?: number;
+      price?: number;
+      pending?: boolean;
+      countsTowardRevenue?: boolean;
+    } = {},
   ): Promise<Membership> {
     await this.usersService.findOne(userId);
     await this.collapseDuplicateMemberships(userId);
@@ -152,8 +185,32 @@ export class MembershipsService {
       return existing;
     }
 
+    if (existing && this.isAdminBlocked(existing)) {
+      throw new BadRequestException(
+        'User membership was cancelled by admin; reactivate it first',
+      );
+    }
+
+    if (existing && options.pending !== true) {
+      const startsAt = new Date();
+      existing.isActive = true;
+      existing.cancelledAt = null;
+      existing.cancelReason = null;
+      existing.startsAt = startsAt;
+      existing.expiresAt = this.computeExpiry(
+        startsAt,
+        options.days ?? this.defaultDays(),
+      );
+      existing.price = options.price ?? existing.price ?? this.defaultPrice();
+      const countsTowardRevenue = options.countsTowardRevenue ?? true;
+      existing.countsTowardRevenue = countsTowardRevenue;
+      existing.paymentVerifiedAt = countsTowardRevenue ? startsAt : null;
+      return this.membershipsRepository.save(existing);
+    }
+
     const startsAt = new Date();
     const pending = options.pending === true;
+    const countsTowardRevenue = options.countsTowardRevenue ?? !pending;
     const expiresAt = pending
       ? startsAt
       : this.computeExpiry(startsAt, options.days ?? this.defaultDays());
@@ -167,8 +224,8 @@ export class MembershipsService {
       expiresAt,
       cancelledAt: null,
       cancelReason: null,
-      paymentVerifiedAt: pending ? null : startsAt,
-      countsTowardRevenue: !pending,
+      paymentVerifiedAt: countsTowardRevenue ? startsAt : null,
+      countsTowardRevenue,
     });
 
     return this.membershipsRepository.save(membership);
@@ -250,8 +307,9 @@ export class MembershipsService {
   }
 
   /**
-   * Restaura cancelaciones automáticas antiguas.
-   * Una reconciliación de identidad nunca debe cancelar ni acortar membresías.
+   * Una sola membresía por usuario.
+   * Reemplaza duplicados: conserva la mejor fila y elimina el resto.
+   * No cancela (cancelar puede cortar el acceso del dasher).
    */
   async collapseDuplicateMemberships(
     userId: string,
@@ -265,24 +323,86 @@ export class MembershipsService {
     }
 
     const now = new Date();
-    const recoverable = list.filter(
-      (membership) =>
-        membership.cancelReason === 'duplicate_same_user' &&
-        membership.expiresAt.getTime() > now.getTime() &&
-        (!membership.isActive || membership.cancelledAt !== null),
+    const actives = list.filter((membership) =>
+      this.isCurrentlyActive(membership, now),
+    );
+    const adminBlocked = list.filter((membership) =>
+      this.isAdminBlocked(membership),
     );
 
-    for (const membership of recoverable) {
-      membership.isActive = true;
-      membership.cancelledAt = null;
-      // Conserva la marca interna para no volver a sumar un cobro duplicado.
+    // Si el admin canceló y no hay otra activa, conservar ese bloqueo.
+    if (!actives.length && adminBlocked.length) {
+      const keeper = [...adminBlocked].sort(
+        (a, b) => b.cancelledAt!.getTime() - a.cancelledAt!.getTime(),
+      )[0];
+      const extras = list.filter((membership) => membership.id !== keeper.id);
+      if (extras.length) {
+        await this.membershipsRepository.remove(extras);
+      }
+      return keeper;
     }
 
-    if (recoverable.length) {
-      await this.membershipsRepository.save(recoverable);
+    const score = (membership: Membership) => {
+      const active = this.isCurrentlyActive(membership, now);
+      const future =
+        !this.isAdminBlocked(membership) &&
+        membership.expiresAt.getTime() > now.getTime();
+      return (
+        Number(active) * 100 +
+        Number(future) * 50 +
+        Number(membership.countsTowardRevenue) * 10 +
+        membership.expiresAt.getTime() / 1_000_000_000
+      );
+    };
+
+    const keeper = [...list].sort((a, b) => score(b) - score(a))[0];
+    const mergePool = list.filter(
+      (membership) => !this.isAdminBlocked(membership),
+    );
+    const latestExpiry = Math.max(
+      ...mergePool.map((membership) => membership.expiresAt.getTime()),
+      keeper.expiresAt.getTime(),
+    );
+
+    if (!this.isAdminBlocked(keeper)) {
+      const revenueSource = mergePool.find(
+        (membership) => membership.countsTowardRevenue,
+      );
+      if (latestExpiry > keeper.expiresAt.getTime()) {
+        keeper.expiresAt = new Date(latestExpiry);
+      }
+      if (keeper.expiresAt.getTime() > now.getTime()) {
+        keeper.isActive = true;
+        keeper.cancelledAt = null;
+        keeper.cancelReason = null;
+      }
+      if (revenueSource) {
+        keeper.countsTowardRevenue = true;
+        keeper.price = revenueSource.price;
+        keeper.paymentVerifiedAt =
+          revenueSource.paymentVerifiedAt ?? keeper.paymentVerifiedAt;
+      }
+      await this.membershipsRepository.save(keeper);
+    }
+
+    const extras = list.filter((membership) => membership.id !== keeper.id);
+    if (extras.length) {
+      await this.membershipsRepository.remove(extras);
     }
 
     return this.findLatestForUser(userId);
+  }
+
+  async collapseAllDuplicateMemberships(): Promise<number> {
+    const userIds = await this.membershipsRepository
+      .createQueryBuilder('m')
+      .select('DISTINCT m.user_id', 'userId')
+      .getRawMany<{ userId: string }>();
+
+    for (const row of userIds) {
+      await this.collapseDuplicateMemberships(row.userId);
+    }
+    return userIds.length;
   }
 
   async cancel(id: string, dto: CancelMembershipDto = {}): Promise<Membership> {

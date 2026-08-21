@@ -160,6 +160,9 @@ export class AdminDashboardService {
   }
 
   async listMemberships() {
+    await this.usersService.mergeDuplicateIdentities();
+    await this.membershipsService.collapseAllDuplicateMemberships();
+
     const memberships = await this.membershipsService.findAll();
     for (const membership of memberships) {
       if (!membership.user && membership.userId) {
@@ -169,7 +172,9 @@ export class AdminDashboardService {
           })) ?? membership.user;
       }
     }
-    return memberships.map((membership) => this.serializeMembership(membership));
+    return memberships.map((membership) =>
+      this.serializeMembership(membership),
+    );
   }
 
   async purgeCancelledMemberships() {

@@ -104,7 +104,9 @@ export class UsersService {
 
     const add = (key: string, user: User) => {
       const list = groups.get(key) ?? [];
-      list.push(user);
+      if (!list.some((item) => item.id === user.id)) {
+        list.push(user);
+      }
       groups.set(key, list);
     };
 
@@ -124,8 +126,8 @@ export class UsersService {
       if (unique.length < 2) {
         continue;
       }
-      const keeper = unique[0];
-      for (const extra of unique.slice(1)) {
+      const keeper = this.pickIdentityKeeper(unique);
+      for (const extra of unique) {
         if (absorbed.has(extra.id) || extra.id === keeper.id) {
           continue;
         }
@@ -136,6 +138,22 @@ export class UsersService {
     }
 
     return merged;
+  }
+
+  /** Preferir el registro más completo (email, nombre, dasher) y más antiguo. */
+  private pickIdentityKeeper(users: User[]): User {
+    return [...users].sort((a, b) => {
+      const score = (user: User) =>
+        Number(Boolean(user.email?.includes('@'))) * 8 +
+        Number(Boolean(user.dasherId)) * 4 +
+        Number(Boolean(user.firstName || user.lastName)) * 2 +
+        Number(Boolean(user.sub));
+      const byScore = score(b) - score(a);
+      if (byScore !== 0) {
+        return byScore;
+      }
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    })[0];
   }
 
   async createFromJwt(jwtToken: string): Promise<User> {
@@ -316,8 +334,11 @@ export class UsersService {
     if (!matches.length) {
       return null;
     }
-    const keeper = matches[0];
-    for (const extra of matches.slice(1)) {
+    const keeper = this.pickIdentityKeeper(matches);
+    for (const extra of matches) {
+      if (extra.id === keeper.id) {
+        continue;
+      }
       await this.absorbUser(keeper, extra);
     }
     return keeper;
@@ -341,8 +362,11 @@ export class UsersService {
       return null;
     }
 
-    const keeper = matches[0];
-    for (const extra of matches.slice(1)) {
+    const keeper = this.pickIdentityKeeper(matches);
+    for (const extra of matches) {
+      if (extra.id === keeper.id) {
+        continue;
+      }
       await this.absorbUser(keeper, extra);
     }
     return keeper;
@@ -365,6 +389,7 @@ export class UsersService {
           jwtToken: user.jwtToken,
           sub: user.sub,
           dasherId: user.dasherId,
+          email: user.email ?? profile?.email,
         });
         if (recovered) {
           this.applyLoginProfile(recovered, profile);
